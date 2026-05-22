@@ -564,22 +564,23 @@ async function fetchSohu() {
   }
 }
 
-// ==================== 澎湃新闻（使用Puppeteer） ====================
+// ==================== 澎湃新闻（axios即可） ====================
 async function fetchThePaper() {
   try {
-    const html = await fetchWithPuppeteer('https://www.thepaper.cn/');
-    const $ = cheerio.load(html);
+    const res = await axiosInstance.get('https://www.thepaper.cn/', { timeout: 12000 });
+    const $ = cheerio.load(res.data);
     const news = [];
     const seenTitles = new Set();
 
-    $('a[href*="/newsDetail_"]').each((i, el) => {
+    $('a[href*="newsDetail_"]').each((i, el) => {
       if (news.length >= MAX_ITEMS_PER_SOURCE) return false;
 
       const $el = $(el);
       let href = $el.attr('href') || '';
-      let title = $el.text().trim();
+      let title = $el.text().trim().replace(/^推荐/, '');
 
-      if (!href.match(/newsDetail_\d+/)) return;
+      if (!href.match(/newsDetail_forward_\d+/)) return;
+      if (href.includes('commTag=true')) return;
       if (seenTitles.has(title) || title.length < 6) return;
       seenTitles.add(title);
 
@@ -645,13 +646,15 @@ async function fetchAllNews() {
 
   const fetcherFunctions = [
     { name: '观察者网', fn: fetchGuancha },
-    { name: '品玩', fn: fetchPingwest },
-    { name: '驱动之家', fn: fetchMysdc },
-    { name: '新浪新闻', fn: fetchSina },
     { name: '网易新闻', fn: fetchWangyi },
     { name: '腾讯新闻', fn: fetchTencent },
     { name: '搜狐新闻', fn: fetchSohu },
-    { name: 'IT之家', fn: fetchIthome }
+    { name: '新浪新闻', fn: fetchSina },
+    { name: '驱动之家', fn: fetchMysdc },
+    { name: '品玩', fn: fetchPingwest },
+    { name: 'IT之家', fn: fetchIthome },
+    { name: '虎嗅', fn: fetchHuxiu },
+    { name: '澎湃新闻', fn: fetchThePaper }
   ];
 
   // 每个抓取器独立超时，互不影响

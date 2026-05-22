@@ -112,9 +112,9 @@ async function initialFetch() {
   }
 }
 
-// 定时任务：每5分钟刷新一次数据（带并发保护）
+// 定时任务：每30分钟刷新一次数据（带并发保护）
 let cronRunning = false;
-cron.schedule('*/5 * * * *', async () => {
+cron.schedule('*/30 * * * *', async () => {
   if (cronRunning) {
     console.log('⏭ 上一次抓取未完成，跳过本次定时任务');
     return;
@@ -146,7 +146,7 @@ app.listen(PORT, async () => {
 ║  - GET /news/api/refresh  强制刷新数据                     ║
 ║  - GET /news/api/status   查看缓存状态                     ║
 ║                                                           ║
-║  定时任务: 每5分钟自动刷新数据                              ║
+║  定时任务: 每30分钟自动刷新数据                             ║
 ╚═══════════════════════════════════════════════════════════╝
   `);
   await initialFetch();

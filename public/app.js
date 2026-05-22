@@ -6,7 +6,7 @@
 const CONFIG = {
   pageSize: 20,           // 初始显示条数
   loadMoreCount: 20,     // 每次加载更多条数
-  refreshInterval: 5 * 60 * 1000,  // 5分钟自动刷新
+  refreshInterval: 30 * 60 * 1000,  // 30分钟自动刷新
   apiUrl: '/news/api/news'
 };
 
@@ -18,8 +18,7 @@ let state = {
   currentSource: '',  // 当前筛选的来源，''表示全部
   pendingSource: '',  // 等待数据加载完成后应用的来源
   searchKeyword: '',
-  isLoading: false,
-  lastUpdate: null
+  isLoading: false
 };
 
 // DOM元素
@@ -29,7 +28,6 @@ const elements = {
   emptyState: document.getElementById('emptyState'),
   loadMoreContainer: document.getElementById('loadMoreContainer'),
   loadMoreBtn: document.getElementById('loadMoreBtn'),
-  lastUpdate: document.getElementById('lastUpdate'),
   visitStats: document.getElementById('visitStats'),
   totalCount: document.getElementById('totalCount'),
   filteredCount: document.getElementById('filteredCount'),
@@ -129,8 +127,6 @@ async function fetchNews() {
 
     if (result.success) {
       state.allNews = result.data;
-      state.lastUpdate = result.lastUpdate;
-      updateLastUpdateTime();
 
       // 如果有待应用的来源筛选，先应用
       if (state.pendingSource) {
@@ -302,13 +298,6 @@ function updateStats() {
 /**
  * 更新最后更新时间
  */
-function updateLastUpdateTime() {
-  if (state.lastUpdate) {
-    const date = new Date(state.lastUpdate);
-    elements.lastUpdate.textContent = `最后更新: ${formatTime(date)}`;
-  }
-}
-
 /**
  * 显示空状态
  */

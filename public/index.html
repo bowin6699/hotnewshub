@@ -6,13 +6,15 @@
   <title>热点新闻聚合站 - HotNewsHub</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
 
   <!-- Hero Section -->
   <header class="hero" id="hero">
-    <div class="hero-bg"></div>
+    <video class="hero-bg" autoplay muted loop playsinline>
+      <source src="images/hero-bg.mp4?v=3" type="video/mp4">
+    </video>
     <div class="hero-overlay"></div>
     <nav class="hero-nav">
       <div class="nav-inner">
@@ -35,8 +37,7 @@
     </nav>
     <div class="hero-content">
       <h1 class="hero-title">热点新闻聚合站</h1>
-      <p class="hero-subtitle">汇集9大平台热点资讯 · 智能聚合 · 每分钟更新</p>
-      <p class="hero-meta" id="lastUpdate">最后更新: --</p>
+      <p class="hero-subtitle">汇集10大平台热点资讯 · 智能聚合 · 每半小时更新</p>
     </div>
   </header>
 
@@ -89,6 +90,12 @@
       <button class="category-tab" data-source="ithome" style="--tab-bg:#2c3e50;">
         IT之家
       </button>
+      <button class="category-tab" data-source="huxiu" style="--tab-bg:#e74c3c;">
+        虎嗅
+      </button>
+      <button class="category-tab" data-source="thepaper" style="--tab-bg:#185b53;">
+        澎湃新闻
+      </button>
     </div>
   </div>
 
@@ -132,10 +139,10 @@
         </svg>
         HotNewsHub
       </div>
-      <p>数据来源于各大开放平台 | 每5分钟自动更新</p>
+      <p>数据来源于各大开放平台 | 每半小时自动更新</p>
     </div>
   </footer>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=2"></script>
 </body>
 </html>
