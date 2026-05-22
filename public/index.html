@@ -4,97 +4,136 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>热点新闻聚合站 - HotNewsHub</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
 </head>
 <body>
-  <div class="container">
-    <!-- 头部 -->
-    <header class="header">
-      <h1><i class="bi bi-fire"></i> 热点新闻聚合站</h1>
-      <p class="subtitle">汇集8大平台热点资讯 | 每5分钟自动更新</p>
-      <p class="last-update" id="lastUpdate">最后更新: --</p>
-      <p class="visit-stats" id="visitStats">总访问: -- | 今日访问: --</p>
-    </header>
 
-    <!-- 搜索和筛选区域 -->
-    <div class="filters">
+  <!-- Hero Section -->
+  <header class="hero" id="hero">
+    <div class="hero-bg"></div>
+    <div class="hero-overlay"></div>
+    <nav class="hero-nav">
+      <div class="nav-inner">
+        <span class="nav-brand">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+          </svg>
+          HotNewsHub
+        </span>
+        <div class="nav-right">
+          <span class="nav-stats" id="visitStats">-- 访问</span>
+          <button id="refreshBtn" class="nav-refresh" title="刷新">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M1 4v6h6M23 20v-6h-6"/>
+              <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </nav>
+    <div class="hero-content">
+      <h1 class="hero-title">热点新闻聚合站</h1>
+      <p class="hero-subtitle">汇集9大平台热点资讯 · 智能聚合 · 每分钟更新</p>
+      <p class="hero-meta" id="lastUpdate">最后更新: --</p>
+    </div>
+  </header>
+
+  <!-- Toolbar -->
+  <div class="toolbar" id="toolbar">
+    <div class="toolbar-inner">
       <div class="search-box">
-        <i class="bi bi-search"></i>
-        <input type="text" id="searchInput" placeholder="搜索新闻标题...">
+        <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+        </svg>
+        <input type="text" id="searchInput" placeholder="搜索新闻标题..." autocomplete="off">
         <button id="clearSearch" class="clear-btn" style="display:none;">
-          <i class="bi bi-x"></i>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2">
+            <path d="M18 6 6 18M6 6l12 12"/>
+          </svg>
         </button>
       </div>
+      <div class="toolbar-stats">
+        <span id="totalCount">共 0 条</span>
+        <span class="stat-dot">·</span>
+        <span id="filteredCount">已筛选 0</span>
+      </div>
     </div>
+  </div>
 
-    <!-- 分类标签（按来源筛选） -->
+  <!-- Category Tabs -->
+  <div class="tabs-wrapper">
     <div class="category-tabs" id="categoryTabs">
-      <button class="category-tab" data-source="guancha" style="--tab-color: #e60012;">
+      <button class="category-tab" data-source="guancha" style="--tab-bg:#e60012;">
         观察者网
       </button>
-      <button class="category-tab" data-source="wangyi" style="--tab-color: #1d87c5;">
+      <button class="category-tab" data-source="wangyi" style="--tab-bg:#1d87c5;">
         网易新闻
       </button>
-      <button class="category-tab" data-source="tencent" style="--tab-color: #df2d32;">
+      <button class="category-tab" data-source="tencent" style="--tab-bg:#df2d32;">
         腾讯新闻
       </button>
-      <button class="category-tab" data-source="sohu" style="--tab-color: #ff7a00;">
+      <button class="category-tab" data-source="sohu" style="--tab-bg:#ff7a00;">
         搜狐新闻
       </button>
-      <button class="category-tab" data-source="sina" style="--tab-color: #e6162d;">
+      <button class="category-tab" data-source="sina" style="--tab-bg:#e6162d;">
         新浪新闻
       </button>
-      <button class="category-tab" data-source="mysdc" style="--tab-color: #3366ff;">
+      <button class="category-tab" data-source="mysdc" style="--tab-bg:#3366ff;">
         驱动之家
       </button>
-      <button class="category-tab" data-source="pingwest" style="--tab-color: #e4007f;">
+      <button class="category-tab" data-source="pingwest" style="--tab-bg:#e4007f;">
         品玩
       </button>
-      <button class="category-tab" data-source="ithome" style="--tab-color: #2c3e50;">
+      <button class="category-tab" data-source="ithome" style="--tab-bg:#2c3e50;">
         IT之家
-      </button>
-    </div>
-
-    <!-- 统计信息 -->
-    <div class="stats" id="stats">
-      <span id="totalCount">共 0 条新闻</span>
-      <span class="stats-separator">|</span>
-      <span id="filteredCount">已筛选 0 条</span>
-      <button id="refreshBtn" class="refresh-btn">
-        <i class="bi bi-arrow-clockwise"></i> 刷新
-      </button>
-    </div>
-
-    <!-- 新闻列表 -->
-    <div class="news-list" id="newsList">
-      <!-- 新闻卡片将通过JS动态生成 -->
-    </div>
-
-    <!-- 加载状态 -->
-    <div class="loading" id="loading" style="display:none;">
-      <div class="spinner"></div>
-      <p>正在加载...</p>
-    </div>
-
-    <!-- 空状态 -->
-    <div class="empty-state" id="emptyState" style="display:none;">
-      <i class="bi bi-inbox"></i>
-      <p>暂无相关新闻</p>
-      <p class="empty-hint">尝试切换分类或筛选条件</p>
-    </div>
-
-    <!-- 加载更多 -->
-    <div class="load-more-container" id="loadMoreContainer" style="display:none;">
-      <button id="loadMoreBtn" class="load-more-btn">
-        <i class="bi bi-plus-circle"></i> 加载更多
       </button>
     </div>
   </div>
 
-  <!-- 页脚 -->
+  <!-- Main Content -->
+  <main class="main-content">
+    <!-- News List -->
+    <div class="news-list" id="newsList"></div>
+
+    <!-- Loading -->
+    <div class="loading" id="loading" style="display:none;">
+      <div class="spinner-ring"><div></div><div></div><div></div><div></div></div>
+      <p>正在加载新闻...</p>
+    </div>
+
+    <!-- Empty State -->
+    <div class="empty-state" id="emptyState" style="display:none;">
+      <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="1" opacity="0.5">
+        <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>
+      </svg>
+      <p>暂无相关新闻</p>
+      <p class="empty-hint">尝试切换分类或筛选条件</p>
+    </div>
+
+    <!-- Load More -->
+    <div class="load-more-wrapper" id="loadMoreContainer" style="display:none;">
+      <button id="loadMoreBtn" class="load-more-btn">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 5v14M5 12h14"/>
+        </svg>
+        加载更多
+      </button>
+    </div>
+  </main>
+
+  <!-- Footer -->
   <footer class="footer">
-    <p>HotNewsHub &copy; 2024 | 数据来源于各大平台 | 每5分钟自动更新</p>
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+        </svg>
+        HotNewsHub
+      </div>
+      <p>数据来源于各大开放平台 | 每5分钟自动更新</p>
+    </div>
   </footer>
 
   <script src="app.js"></script>
