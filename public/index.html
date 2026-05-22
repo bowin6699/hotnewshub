@@ -12,7 +12,7 @@
     <!-- 头部 -->
     <header class="header">
       <h1><i class="bi bi-fire"></i> 热点新闻聚合站</h1>
-      <p class="subtitle">汇集8大平台热点资讯 | 每5分钟自动更新</p>
+      <p class="subtitle">汇集11大平台热点资讯 | 每5分钟自动更新</p>
       <p class="last-update" id="lastUpdate">最后更新: --</p>
       <p class="visit-stats" id="visitStats">总访问: -- | 今日访问: --</p>
     </header>
@@ -30,7 +30,10 @@
 
     <!-- 分类标签（按来源筛选） -->
     <div class="category-tabs" id="categoryTabs">
-      <button class="category-tab active" data-source="toutiao" style="--tab-color: #e60012;">
+      <button class="category-tab active" data-source="" style="--tab-color: #007bff;">
+        全部
+      </button>
+      <button class="category-tab" data-source="toutiao" style="--tab-color: #e60012;">
         今日头条
       </button>
       <button class="category-tab" data-source="guancha" style="--tab-color: #e60012;">
@@ -53,6 +56,15 @@
       </button>
       <button class="category-tab" data-source="pingwest" style="--tab-color: #e4007f;">
         品玩
+      </button>
+      <button class="category-tab" data-source="huxiu" style="--tab-color: #ff6b35;">
+        虎嗅
+      </button>
+      <button class="category-tab" data-source="thepaper" style="--tab-color: #0d6e6e;">
+        澎湃新闻
+      </button>
+      <button class="category-tab" data-source="ithome" style="--tab-color: #2c3e50;">
+        IT之家
       </button>
     </div>
 

@@ -9,7 +9,6 @@ const { classifyNewsList } = require('./classifier');
 
 // Puppeteer配置（用于绕过反爬保护）
 let puppeteerInstance = null;
-let puppeteerLock = Promise.resolve();
 async function getPuppeteer() {
   if (!puppeteerInstance) {
     const puppeteer = require('puppeteer');
@@ -23,13 +22,13 @@ async function getPuppeteer() {
   return puppeteerInstance;
 }
 
-// Puppeteer并发锁，防止多页面同时操作
+// Puppeteer并发锁，确保同时只处理一个页面
 let puppeteerBusy = false;
 const puppeteerQueue = [];
 async function withPuppeteerLock(fn) {
   return new Promise((resolve, reject) => {
     puppeteerQueue.push({ fn, resolve, reject });
-    processQueue();
+    if (!puppeteerBusy) processQueue();
   });
 }
 async function processQueue() {
@@ -43,11 +42,11 @@ async function processQueue() {
     reject(e);
   } finally {
     puppeteerBusy = false;
-    processQueue();
+    if (puppeteerQueue.length > 0) processQueue();
   }
 }
 
-async function fetchWithPuppeteer(url) {
+async function fetchWithPuppeteer(url, timeoutMs = 30000) {
   return withPuppeteerLock(async () => {
     const browser = await getPuppeteer();
     const page = await browser.newPage();
@@ -55,10 +54,15 @@ async function fetchWithPuppeteer(url) {
       await page.setExtraHTTPHeaders({
         'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
       });
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
       await new Promise(r => setTimeout(r, 2000));
       const content = await page.content();
       return content;
+    } catch (error) {
+      if (error.message && error.message.includes('timeout')) {
+        console.log(`Puppeteer超时: ${url.substring(0, 50)}`);
+      }
+      throw error;
     } finally {
       await page.close();
     }
@@ -88,7 +92,10 @@ const SOURCE_NAMES = {
   'toutiao': '今日头条',
   'wangyi': '网易新闻',
   'tencent': '腾讯新闻',
-  'sohu': '搜狐新闻'
+  'sohu': '搜狐新闻',
+  'huxiu': '虎嗅',
+  'thepaper': '澎湃新闻',
+  'ithome': 'IT之家'
 };
 
 /**
@@ -536,6 +543,87 @@ async function fetchSohu() {
   }
 }
 
+// ==================== 澎湃新闻（使用Puppeteer） ====================
+async function fetchThePaper() {
+  try {
+    const html = await fetchWithPuppeteer('https://www.thepaper.cn/');
+    const $ = cheerio.load(html);
+    const news = [];
+    const seenTitles = new Set();
+
+    $('a[href*="/newsDetail_"]').each((i, el) => {
+      if (news.length >= MAX_ITEMS_PER_SOURCE) return false;
+
+      const $el = $(el);
+      let href = $el.attr('href') || '';
+      let title = $el.text().trim();
+
+      if (!href.match(/newsDetail_\d+/)) return;
+      if (seenTitles.has(title) || title.length < 6) return;
+      seenTitles.add(title);
+
+      let url = href.startsWith('http') ? href : 'https://www.thepaper.cn' + (href.startsWith('/') ? '' : '/') + href;
+      news.push(formatNewsItem('thepaper', news.length + 1, title, 0, url));
+    });
+
+    return news;
+  } catch (error) {
+    console.error('获取澎湃新闻失败:', error.message);
+    return [];
+  }
+}
+
+// ==================== IT之家 ====================
+async function fetchIthome() {
+  try {
+    const res = await axiosInstance.get('https://www.ithome.com/');
+    const $ = cheerio.load(res.data);
+    const news = [];
+    const seenTitles = new Set();
+
+    $('.l-list').find('.item, li').each((i, el) => {
+      if (news.length >= MAX_ITEMS_PER_SOURCE) return false;
+
+      const $el = $(el);
+      const linkEl = $el.find('a').first();
+      const href = linkEl.attr('href') || '';
+      let title = linkEl.text().trim() || $el.text().trim();
+
+      if (!href.match(/\/\d+\.htm/)) return;
+      if (seenTitles.has(title) || title.length < 6) return;
+      seenTitles.add(title);
+
+      let url = href.startsWith('http') ? href : 'https://www.ithome.com' + href;
+
+      // 提取时间
+      let timeStr = '';
+      const timeMatch = title.match(/(\d{4}-\d{2}-\d{2})/);
+      if (timeMatch) timeStr = timeMatch[1];
+
+      news.push(formatNewsItem('ithome', news.length + 1, title, 0, url, timeStr));
+    });
+
+    // 备选：抓取头部文章区域
+    if (news.length === 0) {
+      $('a[href*="ithome.com/"]').each((i, el) => {
+        if (news.length >= MAX_ITEMS_PER_SOURCE) return false;
+        const $el = $(el);
+        let href = $el.attr('href') || '';
+        let title = $el.attr('title') || $el.text().trim();
+        if (!href.match(/\/\d+\.htm/) || seenTitles.has(title) || title.length < 6) return;
+        seenTitles.add(title);
+        let url = href.startsWith('http') ? href : 'https://www.ithome.com' + href;
+        news.push(formatNewsItem('ithome', news.length + 1, title, 0, url));
+      });
+    }
+
+    return news;
+  } catch (error) {
+    console.error('获取IT之家失败:', error.message);
+    return [];
+  }
+}
+
 // ==================== 获取所有平台新闻 ====================
 async function fetchAllNews() {
   console.log('开始拉取所有平台新闻...');
@@ -548,10 +636,22 @@ async function fetchAllNews() {
     { name: '今日头条', fn: fetchToutiao },
     { name: '网易新闻', fn: fetchWangyi },
     { name: '腾讯新闻', fn: fetchTencent },
-    { name: '搜狐新闻', fn: fetchSohu }
+    { name: '搜狐新闻', fn: fetchSohu },
+    { name: '虎嗅', fn: fetchHuxiu },
+    { name: '澎湃新闻', fn: fetchThePaper },
+    { name: 'IT之家', fn: fetchIthome }
   ];
 
-  const results = await Promise.allSettled(fetcherFunctions.map(f => f.fn()));
+  // 整体超时: 120秒
+  const fetchPromise = Promise.allSettled(fetcherFunctions.map(f => f.fn()));
+  const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('整体超时')), 120000));
+  const results = await fetchPromise.catch(err => {
+    console.error('新闻爬取整体超时(120s)');
+    return null;
+  });
+  if (!results) {
+    return { news: [], lastUpdate: new Date().toISOString(), sources: { success: [], failed: [] } };
+  }
 
   let allNews = [];
   const successCount = [];
@@ -595,5 +695,7 @@ module.exports = {
   fetchToutiao,
   fetchWangyi,
   fetchTencent,
-  fetchSohu
+  fetchSohu,
+  fetchThePaper,
+  fetchIthome
 };

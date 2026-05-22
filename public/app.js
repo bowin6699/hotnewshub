@@ -48,7 +48,10 @@ const sourceColors = {
   'sohu': '#ff7a00',    // 搜狐新闻
   'sina': '#e6162d',    // 新浪新闻
   'mysdc': '#3366ff',   // 驱动之家
-  'pingwest': '#e4007f'  // 品玩
+  'pingwest': '#e4007f', // 品玩
+  'huxiu': '#ff6b35',   // 虎嗅
+  'thepaper': '#0d6e6e', // 澎湃新闻
+  'ithome': '#2c3e50'   // IT之家
 };
 
 // 来源favicon映射
@@ -60,7 +63,10 @@ const sourceFavicons = {
   'sohu': 'https://www.sohu.com/favicon.ico',
   'sina': 'https://www.sina.com.cn/favicon.ico',
   'mysdc': 'https://www.mydrivers.com/favicon.ico',
-  'pingwest': 'https://www.pingwest.com/favicon.ico'
+  'pingwest': 'https://www.pingwest.com/favicon.ico',
+  'huxiu': 'https://www.huxiu.com/favicon.ico',
+  'thepaper': 'https://www.thepaper.cn/favicon.ico',
+  'ithome': 'https://www.ithome.com/favicon.ico'
 };
 
 /**

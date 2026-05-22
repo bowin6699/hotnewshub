@@ -112,8 +112,14 @@ async function initialFetch() {
   }
 }
 
-// 定时任务：每5分钟刷新一次数据
+// 定时任务：每5分钟刷新一次数据（带并发保护）
+let cronRunning = false;
 cron.schedule('*/5 * * * *', async () => {
+  if (cronRunning) {
+    console.log('⏭ 上一次抓取未完成，跳过本次定时任务');
+    return;
+  }
+  cronRunning = true;
   console.log('定时任务：开始刷新新闻数据...');
   try {
     const result = await fetchAllNews();
@@ -121,6 +127,8 @@ cron.schedule('*/5 * * * *', async () => {
     console.log('定时刷新完成');
   } catch (error) {
     console.error('定时刷新失败:', error);
+  } finally {
+    cronRunning = false;
   }
 });
 
@@ -132,10 +140,11 @@ app.listen(PORT, async () => {
 ║                                                           ║
 ║  服务已启动: http://localhost:${PORT}                        ║
 ║                                                           ║
-║  API接口:                                                 ║
-║  - GET /api/news     获取新闻列表                         ║
-║  - GET /api/refresh  强制刷新数据                         ║
-║  - GET /api/status   查看缓存状态                         ║
+║  访问页面: /news/                                          ║
+║  API接口:                                                  ║
+║  - GET /news/api/news     获取新闻列表                     ║
+║  - GET /news/api/refresh  强制刷新数据                     ║
+║  - GET /news/api/status   查看缓存状态                     ║
 ║                                                           ║
 ║  定时任务: 每5分钟自动刷新数据                              ║
 ╚═══════════════════════════════════════════════════════════╝
