@@ -183,63 +183,33 @@ function getTimeFromString(timeStr, defaultDate = new Date()) {
   return date;
 }
 
-// ==================== 1. 虎嗅（深度抓取，使用Puppeteer绕过反爬） ====================
+// ==================== 1. 虎嗅（使用JSON API） ====================
 async function fetchHuxiu() {
   try {
-    // 先尝试普通请求
-    let html;
-    try {
-      const res = await axiosInstance.get('https://www.huxiu.com/');
-      html = res.data;
-      // 检查是否被反爬拦截
-      if (html.includes('aliyun_waf') || html.includes('waf_nc')) {
-        throw new Error('被反爬拦截，切换到Puppeteer');
-      }
-    } catch (initialError) {
-      // 切换到Puppeteer
-      console.log('虎嗅普通请求被拦截，使用Puppeteer...');
-      html = await fetchWithPuppeteer('https://www.huxiu.com/');
-    }
+    const res = await axiosInstance.get(
+      'https://article-api.huxiu.com/web/article/articleList?platform=www&pagesize=15',
+      { timeout: 10000 }
+    );
+    const data = res.data;
+    if (!data.success || !data.data || !data.data.dataList) return [];
 
-    const $ = cheerio.load(html);
+    const articles = data.data.dataList;
     const news = [];
     const seenTitles = new Set();
 
-    // 从.article-bottom元素提取时间和标题（正确结构）
-    $('.article-bottom').each((i, el) => {
-      if (news.length >= MAX_ITEMS_PER_SOURCE) return false;
+    for (const item of articles) {
+      if (news.length >= MAX_ITEMS_PER_SOURCE) break;
 
-      const $el = $(el);
-      const timeEl = $el.find('.article-bottom__time');
-      const timeStr = timeEl.text().trim();
-      if (!timeStr) return; // 跳过没有时间的
-
-      // 找同一卡片内的文章链接
-      const card = $el.closest('.big-card, .small-card, .article-card, .card-article, .top-article__left, .article-item');
-      const linkEl = card.find('a[href*="/article/"]').first();
-      const href = linkEl.attr('href') || '';
-      if (!href.match(/\/article\/\d+\.html/)) return;
-
-      // 获取标题
-      let title = linkEl.attr('title');
-      if (!title) {
-        const titleEl = linkEl.find('.article-card__info__title, .top__info__title, h3, .title');
-        if (titleEl.length) title = titleEl.text().trim();
-      }
-      if (!title) title = linkEl.text().trim();
-      title = title.substring(0, 100);
-
-      if (seenTitles.has(title) || title.length < 5) return;
-      if (title.includes('登录') || title.includes('注册') || title.includes('app')) return;
-
+      const title = (item.title || '').trim();
+      if (seenTitles.has(title) || title.length < 5) continue;
+      if (title.includes('登录') || title.includes('注册')) continue;
       seenTitles.add(title);
 
-      // 补充完整URL
-      let url = href.startsWith('http') ? href : 'https://www.huxiu.com' + href;
+      const url = item.share_url || `https://www.huxiu.com/article/${item.aid}.html`;
+      const time = item.formatDate || '';
 
-      const time = formatTimeDisplay(getTimeFromString(timeStr));
       news.push(formatNewsItem('huxiu', news.length + 1, title, 0, url, time));
-    });
+    }
 
     return news;
   } catch (error) {
@@ -500,30 +470,39 @@ async function fetchWangyi() {
   }
 }
 
-// ==================== 12. 腾讯新闻（使用Puppeteer） ====================
+// ==================== 12. 腾讯新闻（使用JSON API） ====================
 async function fetchTencent() {
   try {
-    const html = await fetchWithPuppeteer('https://news.qq.com/');
-    const $ = cheerio.load(html);
+    const res = await axiosInstance.get(
+      'https://r.inews.qq.com/gw/event/hot_ranking_list?page_size=20',
+      { timeout: 10000 }
+    );
+    const data = res.data;
+    if (data.ret !== 0 || !data.idlist) return [];
+
     const news = [];
     const seenTitles = new Set();
 
-    $('a[href]').each((i, el) => {
-      if (news.length >= MAX_ITEMS_PER_SOURCE) return false;
+    for (const group of data.idlist) {
+      if (!group.newslist) continue;
+      for (const item of group.newslist) {
+        if (news.length >= MAX_ITEMS_PER_SOURCE) break;
 
-      const $el = $(el);
-      let href = $el.attr('href') || '';
-      let title = $el.text().trim();
+        // 跳过特殊条目（ID以TIP开头的是栏目说明）
+        if (item.id && item.id.startsWith('TIP')) continue;
 
-      // 匹配腾讯新闻文章格式 - https://news.qq.com/rain/a/20260521A00MK600
-      if (!href.match(/news\.qq\.com\/rain\/a\/\d+/i)) return;
-      if (seenTitles.has(title) || title.length < 5) return;
-      seenTitles.add(title);
+        const title = (item.title || item.longtitle || '').trim();
+        if (seenTitles.has(title) || title.length < 6) continue;
+        seenTitles.add(title);
 
-      let url = href.startsWith('http') ? href : 'https://news.qq.com' + href;
-      const time = formatTimeDisplay(new Date());
-      news.push(formatNewsItem('tencent', news.length + 1, title, 0, url, time));
-    });
+        const url = item.url || item.surl || `https://view.inews.qq.com/a/${item.id}`;
+        const hot = item.readCount || item.commentNum || 0;
+        const time = item.time ? formatTimeDisplay(new Date(item.time)) : '';
+
+        news.push(formatNewsItem('tencent', news.length + 1, title, hot, url, time));
+      }
+      if (news.length >= MAX_ITEMS_PER_SOURCE) break;
+    }
 
     return news;
   } catch (error) {
