@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>热点新闻聚合站 - HotNewsHub</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+</head>
+<body>
+  <div class="container">
+    <!-- 头部 -->
+    <header class="header">
+      <h1><i class="bi bi-fire"></i> 热点新闻聚合站</h1>
+      <p class="subtitle">汇集8大平台热点资讯 | 每5分钟自动更新</p>
+      <p class="last-update" id="lastUpdate">最后更新: --</p>
+      <p class="visit-stats" id="visitStats">总访问: -- | 今日访问: --</p>
+    </header>
+
+    <!-- 搜索和筛选区域 -->
+    <div class="filters">
+      <div class="search-box">
+        <i class="bi bi-search"></i>
+        <input type="text" id="searchInput" placeholder="搜索新闻标题...">
+        <button id="clearSearch" class="clear-btn" style="display:none;">
+          <i class="bi bi-x"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- 分类标签（按来源筛选） -->
+    <div class="category-tabs" id="categoryTabs">
+      <button class="category-tab active" data-source="toutiao" style="--tab-color: #e60012;">
+        今日头条
+      </button>
+      <button class="category-tab" data-source="guancha" style="--tab-color: #e60012;">
+        观察者网
+      </button>
+      <button class="category-tab" data-source="wangyi" style="--tab-color: #1d87c5;">
+        网易新闻
+      </button>
+      <button class="category-tab" data-source="tencent" style="--tab-color: #df2d32;">
+        腾讯新闻
+      </button>
+      <button class="category-tab" data-source="sohu" style="--tab-color: #ff7a00;">
+        搜狐新闻
+      </button>
+      <button class="category-tab" data-source="sina" style="--tab-color: #e6162d;">
+        新浪新闻
+      </button>
+      <button class="category-tab" data-source="mysdc" style="--tab-color: #3366ff;">
+        驱动之家
+      </button>
+      <button class="category-tab" data-source="pingwest" style="--tab-color: #e4007f;">
+        品玩
+      </button>
+    </div>
+
+    <!-- 统计信息 -->
+    <div class="stats" id="stats">
+      <span id="totalCount">共 0 条新闻</span>
+      <span class="stats-separator">|</span>
+      <span id="filteredCount">已筛选 0 条</span>
+      <button id="refreshBtn" class="refresh-btn">
+        <i class="bi bi-arrow-clockwise"></i> 刷新
+      </button>
+    </div>
+
+    <!-- 新闻列表 -->
+    <div class="news-list" id="newsList">
+      <!-- 新闻卡片将通过JS动态生成 -->
+    </div>
+
+    <!-- 加载状态 -->
+    <div class="loading" id="loading" style="display:none;">
+      <div class="spinner"></div>
+      <p>正在加载...</p>
+    </div>
+
+    <!-- 空状态 -->
+    <div class="empty-state" id="emptyState" style="display:none;">
+      <i class="bi bi-inbox"></i>
+      <p>暂无相关新闻</p>
+      <p class="empty-hint">尝试切换分类或筛选条件</p>
+    </div>
+
+    <!-- 加载更多 -->
+    <div class="load-more-container" id="loadMoreContainer" style="display:none;">
+      <button id="loadMoreBtn" class="load-more-btn">
+        <i class="bi bi-plus-circle"></i> 加载更多
+      </button>
+    </div>
+  </div>
+
+  <!-- 页脚 -->
+  <footer class="footer">
+    <p>HotNewsHub &copy; 2024 | 数据来源于各大平台 | 每5分钟自动更新</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

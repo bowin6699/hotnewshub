@@ -1,0 +1,599 @@
+/**
+ * src/fetcher.js - 数据拉取模块（爬虫方案）
+ * 使用cheerio抓取各平台网页获取热点新闻，每个来源限制10条
+ */
+
+const axios = require('axios');
+const cheerio = require('cheerio');
+const { classifyNewsList } = require('./classifier');
+
+// Puppeteer配置（用于绕过反爬保护）
+let puppeteerInstance = null;
+let puppeteerLock = Promise.resolve();
+async function getPuppeteer() {
+  if (!puppeteerInstance) {
+    const puppeteer = require('puppeteer');
+    const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser';
+    puppeteerInstance = await puppeteer.launch({
+      headless: 'new',
+      executablePath: executablePath,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+    });
+  }
+  return puppeteerInstance;
+}
+
+// Puppeteer并发锁，防止多页面同时操作
+let puppeteerBusy = false;
+const puppeteerQueue = [];
+async function withPuppeteerLock(fn) {
+  return new Promise((resolve, reject) => {
+    puppeteerQueue.push({ fn, resolve, reject });
+    processQueue();
+  });
+}
+async function processQueue() {
+  if (puppeteerBusy || puppeteerQueue.length === 0) return;
+  puppeteerBusy = true;
+  const { fn, resolve, reject } = puppeteerQueue.shift();
+  try {
+    const result = await fn();
+    resolve(result);
+  } catch (e) {
+    reject(e);
+  } finally {
+    puppeteerBusy = false;
+    processQueue();
+  }
+}
+
+async function fetchWithPuppeteer(url) {
+  return withPuppeteerLock(async () => {
+    const browser = await getPuppeteer();
+    const page = await browser.newPage();
+    try {
+      await page.setExtraHTTPHeaders({
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
+      });
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      await new Promise(r => setTimeout(r, 2000));
+      const content = await page.content();
+      return content;
+    } finally {
+      await page.close();
+    }
+  });
+}
+
+// axios实例配置
+const axiosInstance = axios.create({
+  timeout: 10000,  // 10秒超时
+  headers: {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+    'Connection': 'keep-alive'
+  }
+});
+
+// 每个来源限制条数
+const MAX_ITEMS_PER_SOURCE = 10;
+
+// 数据源名称映射
+const SOURCE_NAMES = {
+  'guancha': '观察者网',
+  'pingwest': '品玩',
+  'mysdc': '驱动之家',
+  'sina': '新浪新闻',
+  'toutiao': '今日头条',
+  'wangyi': '网易新闻',
+  'tencent': '腾讯新闻',
+  'sohu': '搜狐新闻'
+};
+
+/**
+ * 统一格式化新闻数据
+ */
+function formatNewsItem(source, index, title, hot = 0, url = '#', time = '') {
+  return {
+    id: `${source}_${Date.now()}_${index}`,
+    title: title.trim().substring(0, 200),
+    hot: typeof hot === 'string' ? parseInt(hot.replace(/[^\d]/g, '')) || 0 : (hot || 0),
+    url: url || '#',
+    source: SOURCE_NAMES[source] || source,
+    sourceKey: source,
+    index: index,
+    time: time  // 时间字符串
+  };
+}
+
+/**
+ * 从相对时间字符串获取时间
+ */
+function parseRelativeTime(timeStr) {
+  const now = new Date();
+  let date = new Date(now);
+
+  if (timeStr.includes('分钟前')) {
+    const mins = parseInt(timeStr.match(/(\d+)/)[1]);
+    date = new Date(now - mins * 60000);
+  } else if (timeStr.includes('小时前')) {
+    const hours = parseInt(timeStr.match(/(\d+)/)[1]);
+    date = new Date(now - hours * 3600000);
+  } else if (timeStr.includes('天前')) {
+    const days = parseInt(timeStr.match(/(\d+)/)[1]);
+    date = new Date(now - days * 86400000);
+  } else if (timeStr.includes('月') && timeStr.includes('日')) {
+    // 格式: 5月20日
+    const match = timeStr.match(/(\d+)月(\d+)日/);
+    if (match) {
+      const month = parseInt(match[1]) - 1;
+      const day = parseInt(match[2]);
+      date = new Date(now.getFullYear(), month, day);
+    }
+  } else if (timeStr.includes('今天')) {
+    const match = timeStr.match(/今天(\d+):(\d+)/);
+    if (match) {
+      date = new Date(now.getFullYear(), now.getMonth(), now.getDate(), parseInt(match[1]), parseInt(match[2]));
+    }
+  }
+
+  return date;
+}
+
+/**
+ * 格式化时间显示（只显示日期，如 2026-5-21）
+ */
+function formatTimeDisplay(date) {
+  if (!date || !(date instanceof Date) || isNaN(date)) return '';
+
+  const y = date.getFullYear();
+  const m = date.getMonth() + 1;
+  const d = date.getDate();
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * 从时间字符串获取Date对象
+ */
+function getTimeFromString(timeStr, defaultDate = new Date()) {
+  if (!timeStr) return defaultDate;
+  const date = parseRelativeTime(timeStr);
+  return date;
+}
+
+// ==================== 1. 虎嗅（深度抓取，使用Puppeteer绕过反爬） ====================
+async function fetchHuxiu() {
+  try {
+    // 先尝试普通请求
+    let html;
+    try {
+      const res = await axiosInstance.get('https://www.huxiu.com/');
+      html = res.data;
+      // 检查是否被反爬拦截
+      if (html.includes('aliyun_waf') || html.includes('waf_nc')) {
+        throw new Error('被反爬拦截，切换到Puppeteer');
+      }
+    } catch (initialError) {
+      // 切换到Puppeteer
+      console.log('虎嗅普通请求被拦截，使用Puppeteer...');
+      html = await fetchWithPuppeteer('https://www.huxiu.com/');
+    }
+
+    const $ = cheerio.load(html);
+    const news = [];
+    const seenTitles = new Set();
+
+    // 从.article-bottom元素提取时间和标题（正确结构）
+    $('.article-bottom').each((i, el) => {
+      if (news.length >= MAX_ITEMS_PER_SOURCE) return false;
+
+      const $el = $(el);
+      const timeEl = $el.find('.article-bottom__time');
+      const timeStr = timeEl.text().trim();
+      if (!timeStr) return; // 跳过没有时间的
+
+      // 找同一卡片内的文章链接
+      const card = $el.closest('.big-card, .small-card, .article-card, .card-article, .top-article__left, .article-item');
+      const linkEl = card.find('a[href*="/article/"]').first();
+      const href = linkEl.attr('href') || '';
+      if (!href.match(/\/article\/\d+\.html/)) return;
+
+      // 获取标题
+      let title = linkEl.attr('title');
+      if (!title) {
+        const titleEl = linkEl.find('.article-card__info__title, .top__info__title, h3, .title');
+        if (titleEl.length) title = titleEl.text().trim();
+      }
+      if (!title) title = linkEl.text().trim();
+      title = title.substring(0, 100);
+
+      if (seenTitles.has(title) || title.length < 5) return;
+      if (title.includes('登录') || title.includes('注册') || title.includes('app')) return;
+
+      seenTitles.add(title);
+
+      // 补充完整URL
+      let url = href.startsWith('http') ? href : 'https://www.huxiu.com' + href;
+
+      const time = formatTimeDisplay(getTimeFromString(timeStr));
+      news.push(formatNewsItem('huxiu', news.length + 1, title, 0, url, time));
+    });
+
+    return news;
+  } catch (error) {
+    console.error('获取虎嗅失败:', error.message);
+    return [];
+  }
+}
+
+// ==================== 2. 观察者网（深度抓取，使用Puppeteer绕过反爬） ====================
+async function fetchGuancha() {
+  try {
+    // 先尝试普通请求
+    let html;
+    try {
+      const res = await axiosInstance.get('https://www.guancha.cn/');
+      html = res.data;
+      // 检查是否被反爬拦截
+      if (html.includes('EO_Bot_Ssid') || html.includes('__tst_status')) {
+        throw new Error('被反爬拦截，切换到Puppeteer');
+      }
+    } catch (initialError) {
+      // 切换到Puppeteer
+      console.log('观察者网普通请求被拦截，使用Puppeteer...');
+      html = await fetchWithPuppeteer('https://www.guancha.cn/');
+    }
+
+    const $ = cheerio.load(html);
+    const news = [];
+    const seenTitles = new Set();
+
+    // 抓取所有文章链接
+    $('a[href]').each((i, el) => {
+      if (news.length >= MAX_ITEMS_PER_SOURCE) return false;
+
+      const $el = $(el);
+      const href = $el.attr('href') || '';
+      const title = $el.text().trim();
+
+      // 匹配文章URL格式: /internation/2026_05_21_817846.shtml 等
+      const articleMatch = href.match(/^\/(internation|politics|economy|military|GuanJinRong|culture|society)\/\d{4}_\d{2}_\d+_\d+\.shtml$/);
+      if (!articleMatch) return;
+
+      // 跳过重复标题和无效标题
+      if (seenTitles.has(title) || title.length < 10) return;
+      if (title.includes('网站自律') || title.includes('登录') || title.includes('注册') || title.includes('APP')) return;
+
+      seenTitles.add(title);
+
+      // 补充完整URL
+      let url = href.startsWith('http') ? href : 'https://www.guancha.cn' + href;
+
+      // 从URL提取时间
+      let timeStr = '';
+      const urlMatch = href.match(/(\d{4}_\d{2}_\d{2})/);
+      if (urlMatch) {
+        const dateStr = urlMatch[1].replace(/_/g, '-');
+        timeStr = formatTimeDisplay(new Date(dateStr));
+      }
+
+      news.push(formatNewsItem('guancha', news.length + 1, title, 0, url, timeStr));
+    });
+
+    return news;
+  } catch (error) {
+    console.error('获取观察者网失败:', error.message);
+    return [];
+  }
+}
+
+// ==================== 3. 品玩 ====================
+async function fetchPingwest() {
+  try {
+    const res = await axiosInstance.get('https://www.pingwest.com/');
+    const $ = cheerio.load(res.data);
+    const news = [];
+    const seenTitles = new Set();
+
+    $('a.title').each((i, el) => {
+      if (news.length >= MAX_ITEMS_PER_SOURCE) return false;
+
+      const title = $(el).text().trim();
+      let url = $(el).attr('href') || '';
+
+      if (!url || !url.match(/\/\d+/)) return;
+      if (seenTitles.has(title) || title.length < 5) return;
+      seenTitles.add(title);
+
+      if (url.startsWith('//')) {
+        url = 'https:' + url;
+      } else if (url.startsWith('/')) {
+        url = 'https://www.pingwest.com' + url;
+      }
+
+      // 获取时间 - 从父容器查找.time
+      let timeStr = '';
+      const $parent = $(el).closest('li, div, section');
+      const timeEl = $parent.find('.time').first();
+      if (timeEl.length) {
+        timeStr = timeEl.text().trim();
+        if (timeStr.includes('·')) {
+          timeStr = timeStr.split('·')[1];
+        }
+      }
+
+      if (title && title.length > 5 && url) {
+        const time = timeStr ? formatTimeDisplay(getTimeFromString(timeStr)) : '';
+        news.push(formatNewsItem('pingwest', news.length + 1, title, 0, url, time));
+      }
+    });
+
+    return news;
+  } catch (error) {
+    console.error('获取品玩失败:', error.message);
+    return [];
+  }
+}
+
+// ==================== 4. 驱动之家 ====================
+async function fetchMysdc() {
+  try {
+    const res = await axiosInstance.get('https://www.mydrivers.com/');
+    const $ = cheerio.load(res.data);
+    const news = [];
+    const seenTitles = new Set();
+
+    // 查找所有.news_plun元素，从它获取时间和链接
+    const timeEls = $('.news_plun');
+    timeEls.each((i, el) => {
+      if (news.length >= MAX_ITEMS_PER_SOURCE) return false;
+
+      const timeText = $(el).text().trim();
+      // 时间格式: "2026-05-21 12:05  0  0  0  复制链接  QQ  微博  微信  QQ空间"
+      const timeMatch = timeText.match(/(\d{4}-\d{2}-\d{2})/);
+      if (!timeMatch) return;
+
+      const timeStr = timeMatch[1];
+      // 获取同一行的新闻链接
+      const parent = $(el).parent();
+      const linkEl = parent.find('a[href*="news.mydrivers.com"]').first();
+      const href = linkEl.attr('href') || '';
+      const title = linkEl.text().trim();
+
+      if (!href || seenTitles.has(title) || title.length < 5) return;
+      seenTitles.add(title);
+
+      const url = href;
+      news.push(formatNewsItem('mysdc', news.length + 1, title, 0, url, timeStr));
+    });
+
+    return news;
+  } catch (error) {
+    console.error('获取驱动之家失败:', error.message);
+    return [];
+  }
+}
+
+// ==================== 9. 新浪新闻 ====================
+async function fetchSina() {
+  try {
+    const res = await axiosInstance.get('https://feed.mix.sina.com.cn/api/roll/get', {
+      params: { pageid: 153, lid: 2515, k: '', num: 20, page: 1 }
+    });
+    const data = res.data;
+
+    if (data.result && Array.isArray(data.result.data)) {
+      return data.result.data.slice(0, MAX_ITEMS_PER_SOURCE).map((item, index) => {
+        // 解析时间戳
+        let timeDisplay = '';
+        if (item.ctime) {
+          const date = new Date(item.ctime * 1000);
+          timeDisplay = formatTimeDisplay(date);
+        }
+
+        return formatNewsItem(
+          'sina',
+          index + 1,
+          item.title,
+          0,
+          item.wapurl || item.url || '#',
+          timeDisplay
+        );
+      });
+    }
+    return [];
+  } catch (error) {
+    console.error('获取新浪新闻失败:', error.message);
+    return [];
+  }
+}
+
+// ==================== 10. 今日头条（使用Puppeteer） ====================
+async function fetchToutiao() {
+  try {
+    const html = await fetchWithPuppeteer('https://www.toutiao.com/');
+    const $ = cheerio.load(html);
+    const news = [];
+    const seenTitles = new Set();
+
+    $('a[href*="/article/"]').each((i, el) => {
+      if (news.length >= MAX_ITEMS_PER_SOURCE) return false;
+
+      const $el = $(el);
+      let href = $el.attr('href') || '';
+      let title = $el.text().trim();
+
+      if (!href.match(/\/article\/\d+/)) return;
+      if (seenTitles.has(title) || title.length < 5) return;
+      seenTitles.add(title);
+
+      let url = href.startsWith('http') ? href : 'https://www.toutiao.com' + href;
+      const time = formatTimeDisplay(new Date());
+      news.push(formatNewsItem('toutiao', news.length + 1, title, 0, url, time));
+    });
+
+    return news;
+  } catch (error) {
+    console.error('获取今日头条失败:', error.message);
+    return [];
+  }
+}
+
+// ==================== 11. 网易新闻（使用Puppeteer） ====================
+async function fetchWangyi() {
+  try {
+    const html = await fetchWithPuppeteer('https://news.163.com/');
+    const $ = cheerio.load(html);
+    const news = [];
+    const seenTitles = new Set();
+
+    $('a[href]').each((i, el) => {
+      if (news.length >= MAX_ITEMS_PER_SOURCE) return false;
+
+      const $el = $(el);
+      let href = $el.attr('href') || '';
+      let title = $el.text().trim();
+
+      // 只抓取文章页面 - 匹配 www.163.com/news/article/xxxxx.html 格式
+      if (!href.match(/www\.163\.com\/news\/article\/[A-Z0-9]+\.html/i)) return;
+      if (seenTitles.has(title) || title.length < 5) return;
+      seenTitles.add(title);
+
+      let url = href.startsWith('http') ? href : 'https://' + href;
+      const time = formatTimeDisplay(new Date());
+      news.push(formatNewsItem('wangyi', news.length + 1, title, 0, url, time));
+    });
+
+    return news;
+  } catch (error) {
+    console.error('获取网易新闻失败:', error.message);
+    return [];
+  }
+}
+
+// ==================== 12. 腾讯新闻（使用Puppeteer） ====================
+async function fetchTencent() {
+  try {
+    const html = await fetchWithPuppeteer('https://news.qq.com/');
+    const $ = cheerio.load(html);
+    const news = [];
+    const seenTitles = new Set();
+
+    $('a[href]').each((i, el) => {
+      if (news.length >= MAX_ITEMS_PER_SOURCE) return false;
+
+      const $el = $(el);
+      let href = $el.attr('href') || '';
+      let title = $el.text().trim();
+
+      // 匹配腾讯新闻文章格式 - https://news.qq.com/rain/a/20260521A00MK600
+      if (!href.match(/news\.qq\.com\/rain\/a\/\d+/i)) return;
+      if (seenTitles.has(title) || title.length < 5) return;
+      seenTitles.add(title);
+
+      let url = href.startsWith('http') ? href : 'https://news.qq.com' + href;
+      const time = formatTimeDisplay(new Date());
+      news.push(formatNewsItem('tencent', news.length + 1, title, 0, url, time));
+    });
+
+    return news;
+  } catch (error) {
+    console.error('获取腾讯新闻失败:', error.message);
+    return [];
+  }
+}
+
+// ==================== 13. 搜狐新闻（使用Puppeteer） ====================
+async function fetchSohu() {
+  try {
+    const html = await fetchWithPuppeteer('https://www.sohu.com/');
+    const $ = cheerio.load(html);
+    const news = [];
+    const seenTitles = new Set();
+
+    $('a[href]').each((i, el) => {
+      if (news.length >= MAX_ITEMS_PER_SOURCE) return false;
+
+      const $el = $(el);
+      let href = $el.attr('href') || '';
+      let title = $el.text().trim();
+
+      // 匹配搜狐文章格式: www.sohu.com/a/1025413060_...
+      if (!href.match(/www\.sohu\.com\/a\/\d+/)) return;
+      if (seenTitles.has(title) || title.length < 5) return;
+      seenTitles.add(title);
+
+      let url = href.startsWith('http') ? href : 'https://www.sohu.com' + href;
+      const time = formatTimeDisplay(new Date());
+      news.push(formatNewsItem('sohu', news.length + 1, title, 0, url, time));
+    });
+
+    return news;
+  } catch (error) {
+    console.error('获取搜狐新闻失败:', error.message);
+    return [];
+  }
+}
+
+// ==================== 获取所有平台新闻 ====================
+async function fetchAllNews() {
+  console.log('开始拉取所有平台新闻...');
+
+  const fetcherFunctions = [
+    { name: '观察者网', fn: fetchGuancha },
+    { name: '品玩', fn: fetchPingwest },
+    { name: '驱动之家', fn: fetchMysdc },
+    { name: '新浪新闻', fn: fetchSina },
+    { name: '今日头条', fn: fetchToutiao },
+    { name: '网易新闻', fn: fetchWangyi },
+    { name: '腾讯新闻', fn: fetchTencent },
+    { name: '搜狐新闻', fn: fetchSohu }
+  ];
+
+  const results = await Promise.allSettled(fetcherFunctions.map(f => f.fn()));
+
+  let allNews = [];
+  const successCount = [];
+  const failCount = [];
+
+  results.forEach((result, index) => {
+    const sourceName = fetcherFunctions[index].name;
+    if (result.status === 'fulfilled') {
+      const news = result.value || [];
+      allNews = allNews.concat(news);
+      if (news.length > 0) {
+        successCount.push(`${sourceName}(${news.length}条)`);
+      }
+    } else {
+      failCount.push(sourceName);
+    }
+  });
+
+  // 按热度排序
+  allNews.sort((a, b) => b.hot - a.hot);
+
+  console.log(`新闻拉取完成: ${successCount.length > 0 ? '成功 ' + successCount.join(', ') : ''}${failCount.length > 0 ? ', 失败 ' + failCount.join(', ') : ''}，共${allNews.length}条`);
+
+  return {
+    news: allNews,
+    lastUpdate: new Date().toISOString(),
+    sources: {
+      success: successCount,
+      failed: failCount
+    }
+  };
+}
+
+module.exports = {
+  fetchAllNews,
+  fetchHuxiu,
+  fetchGuancha,
+  fetchPingwest,
+  fetchMysdc,
+  fetchSina,
+  fetchToutiao,
+  fetchWangyi,
+  fetchTencent,
+  fetchSohu
+};
