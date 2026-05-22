@@ -46,7 +46,7 @@ async function processQueue() {
   }
 }
 
-async function fetchWithPuppeteer(url, timeoutMs = 30000) {
+async function fetchWithPuppeteer(url, timeoutMs = 15000) {
   return withPuppeteerLock(async () => {
     const browser = await getPuppeteer();
     const page = await browser.newPage();
@@ -633,23 +633,19 @@ async function fetchAllNews() {
     { name: '品玩', fn: fetchPingwest },
     { name: '驱动之家', fn: fetchMysdc },
     { name: '新浪新闻', fn: fetchSina },
-    { name: '今日头条', fn: fetchToutiao },
     { name: '网易新闻', fn: fetchWangyi },
     { name: '腾讯新闻', fn: fetchTencent },
     { name: '搜狐新闻', fn: fetchSohu },
-    { name: '虎嗅', fn: fetchHuxiu },
-    { name: '澎湃新闻', fn: fetchThePaper },
     { name: 'IT之家', fn: fetchIthome }
   ];
 
-  // 整体超时: 120秒
-  const fetchPromise = Promise.allSettled(fetcherFunctions.map(f => f.fn()));
-  const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('整体超时')), 120000));
-  const results = await fetchPromise.catch(err => {
-    console.error('新闻爬取整体超时(120s)');
-    return null;
-  });
-  if (!results) {
+  // 整体超时: 90秒
+  const results = await Promise.race([
+    Promise.allSettled(fetcherFunctions.map(f => f.fn())),
+    new Promise(resolve => setTimeout(() => resolve('timeout'), 90000))
+  ]);
+  if (results === 'timeout') {
+    console.error('新闻爬取整体超时(90s)');
     return { news: [], lastUpdate: new Date().toISOString(), sources: { success: [], failed: [] } };
   }
 
