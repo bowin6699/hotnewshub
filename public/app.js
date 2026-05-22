@@ -15,7 +15,7 @@ let state = {
   allNews: [],
   filteredNews: [],
   displayedCount: CONFIG.pageSize,
-  currentSource: '',  // 当前筛选的来源，''表示全部
+  currentSource: 'thepaper',  // 默认显示澎湃新闻
   pendingSource: '',  // 等待数据加载完成后应用的来源
   searchKeyword: '',
   isLoading: false
