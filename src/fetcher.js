@@ -163,7 +163,7 @@ function parseRelativeTime(timeStr) {
 }
 
 /**
- * 格式化时间显示（只显示日期，如 2026-5-21）
+ * 格式化时间显示（显示日期+小时，如 2026-5-21 14时）
  */
 function formatTimeDisplay(date) {
   if (!date || !(date instanceof Date) || isNaN(date)) return '';
@@ -171,7 +171,8 @@ function formatTimeDisplay(date) {
   const y = date.getFullYear();
   const m = date.getMonth() + 1;
   const d = date.getDate();
-  return `${y}-${m}-${d}`;
+  const h = date.getHours();
+  return `${y}-${m}-${d} ${h}时`;
 }
 
 /**
@@ -206,7 +207,7 @@ async function fetchHuxiu() {
       seenTitles.add(title);
 
       const url = item.share_url || `https://www.huxiu.com/article/${item.aid}.html`;
-      const time = item.formatDate || '';
+      const time = item.formatDate ? formatTimeDisplay(getTimeFromString(item.formatDate)) : formatTimeDisplay(new Date());
 
       news.push(formatNewsItem('huxiu', news.length + 1, title, 0, url, time));
     }
@@ -342,10 +343,10 @@ async function fetchMysdc() {
 
       const timeText = $(el).text().trim();
       // 时间格式: "2026-05-21 12:05  0  0  0  复制链接  QQ  微博  微信  QQ空间"
-      const timeMatch = timeText.match(/(\d{4}-\d{2}-\d{2})/);
+      const timeMatch = timeText.match(/(\d{4}-\d{2}-\d{2})\s+(\d{2})/);
       if (!timeMatch) return;
 
-      const timeStr = timeMatch[1];
+      const timeStr = timeMatch[1] + ' ' + timeMatch[2] + '时';
       // 获取同一行的新闻链接
       const parent = $(el).parent();
       const linkEl = parent.find('a[href*="news.mydrivers.com"]').first();
@@ -460,7 +461,7 @@ async function fetchWangyi() {
 
       const url = href.startsWith('http') ? href : 'https://3g.163.com' + href;
 
-      news.push(formatNewsItem('wangyi', news.length + 1, title, hot, url, ''));
+      news.push(formatNewsItem('wangyi', news.length + 1, title, hot, url, formatTimeDisplay(new Date())));
     });
 
     return news;
@@ -532,7 +533,7 @@ async function fetchSohu() {
       seenTitles.add(title);
 
       let url = href.startsWith('http') ? href : 'https://' + href;
-      news.push(formatNewsItem('sohu', news.length + 1, title, 0, url, ''));
+      news.push(formatNewsItem('sohu', news.length + 1, title, 0, url, formatTimeDisplay(new Date())));
     });
 
     return news;
@@ -563,7 +564,7 @@ async function fetchThePaper() {
       seenTitles.add(title);
 
       let url = href.startsWith('http') ? href : 'https://www.thepaper.cn' + (href.startsWith('/') ? '' : '/') + href;
-      news.push(formatNewsItem('thepaper', news.length + 1, title, 0, url));
+      news.push(formatNewsItem('thepaper', news.length + 1, title, 0, url, formatTimeDisplay(new Date())));
     });
 
     return news;
@@ -608,7 +609,7 @@ async function fetchIthome() {
         if (timeEl.length) timeStr = timeEl.text().trim();
       }
 
-      news.push(formatNewsItem('ithome', news.length + 1, title, 0, url, timeStr));
+      news.push(formatNewsItem('ithome', news.length + 1, title, 0, url, timeStr || formatTimeDisplay(new Date())));
     });
 
     return news;
