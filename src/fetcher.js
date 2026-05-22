@@ -49,16 +49,27 @@ async function processQueue() {
   }
 }
 
-async function fetchWithPuppeteer(url, timeoutMs = 15000) {
+async function fetchWithPuppeteer(url, timeoutMs = 20000) {
   return withPuppeteerLock(async () => {
     const browser = await getPuppeteer();
-    const page = await browser.newPage();
+    let page;
     try {
+      page = await browser.newPage();
       await page.setExtraHTTPHeaders({
         'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
       });
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
-      await new Promise(r => setTimeout(r, 2000));
+      try {
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+      } catch (navError) {
+        // 即使导航超时，页面可能已有部分内容
+        const content = await page.content();
+        if (content && content.length > 2000) {
+          console.log(`Puppeteer导航超时但有部分内容: ${url.substring(0, 40)} (${content.length}字节)`);
+          return content;
+        }
+        throw navError;
+      }
+      await new Promise(r => setTimeout(r, 500));
       const content = await page.content();
       return content;
     } catch (error) {
@@ -67,7 +78,7 @@ async function fetchWithPuppeteer(url, timeoutMs = 15000) {
       }
       throw error;
     } finally {
-      await page.close();
+      if (page) await page.close().catch(() => {});
     }
   });
 }
@@ -450,29 +461,36 @@ async function fetchToutiao() {
   }
 }
 
-// ==================== 11. 网易新闻（使用Puppeteer） ====================
+// ==================== 11. 网易新闻（使用3g.163.com移动版，axios即可） ====================
 async function fetchWangyi() {
   try {
-    const html = await fetchWithPuppeteer('https://news.163.com/');
-    const $ = cheerio.load(html);
+    const res = await axiosInstance.get('https://3g.163.com/news', { timeout: 12000 });
+    const $ = cheerio.load(res.data);
     const news = [];
     const seenTitles = new Set();
 
-    $('a[href]').each((i, el) => {
+    $('a[href*="/news/article/"]').each((i, el) => {
       if (news.length >= MAX_ITEMS_PER_SOURCE) return false;
 
       const $el = $(el);
-      let href = $el.attr('href') || '';
-      let title = $el.text().trim();
+      const href = $el.attr('href') || '';
 
-      // 只抓取文章页面 - 匹配 www.163.com/news/article/xxxxx.html 格式
-      if (!href.match(/www\.163\.com\/news\/article\/[A-Z0-9]+\.html/i)) return;
-      if (seenTitles.has(title) || title.length < 5) return;
+      // 从h4取标题，.s-source取来源，.s-replyCount取跟贴数
+      const h4 = $el.find('h4').first();
+      const title = h4.text().trim();
+
+      const replyStr = $el.find('.s-replyCount').text().trim();
+      let hot = 0;
+      const hotMatch = replyStr.match(/(\d+)/);
+      if (hotMatch) hot = parseInt(hotMatch[1]) || 0;
+
+      if (!href.match(/\/news\/article\/[A-Z0-9]+\.html/i)) return;
+      if (seenTitles.has(title) || title.length < 6) return;
       seenTitles.add(title);
 
-      let url = href.startsWith('http') ? href : 'https://' + href;
-      const time = formatTimeDisplay(new Date());
-      news.push(formatNewsItem('wangyi', news.length + 1, title, 0, url, time));
+      const url = href.startsWith('http') ? href : 'https://3g.163.com' + href;
+
+      news.push(formatNewsItem('wangyi', news.length + 1, title, hot, url, ''));
     });
 
     return news;
@@ -584,41 +602,35 @@ async function fetchIthome() {
     const news = [];
     const seenTitles = new Set();
 
-    $('.l-list').find('.item, li').each((i, el) => {
+    // IT之家文章链接格式: /0/953/623.htm (三段路径)
+    $('a[href*="/0/"][href$=".htm"]').each((i, el) => {
       if (news.length >= MAX_ITEMS_PER_SOURCE) return false;
 
       const $el = $(el);
-      const linkEl = $el.find('a').first();
-      const href = linkEl.attr('href') || '';
-      let title = linkEl.text().trim() || $el.text().trim();
+      let href = $el.attr('href') || '';
+      let title = $el.text().trim();
 
-      if (!href.match(/\/\d+\.htm/)) return;
+      // 匹配文章URL格式: /0/xxx/xxx.htm
+      if (!href.match(/\/0\/\d+\/\d+\.htm/)) return;
       if (seenTitles.has(title) || title.length < 6) return;
+
+      // 过滤非新闻类链接
+      if (title.includes('系统镜像') || title.includes('固件下载') || title.includes('描述文件')) return;
+
       seenTitles.add(title);
 
       let url = href.startsWith('http') ? href : 'https://www.ithome.com' + href;
 
-      // 提取时间
+      // 提取时间 - 从相邻元素查找
       let timeStr = '';
-      const timeMatch = title.match(/(\d{4}-\d{2}-\d{2})/);
-      if (timeMatch) timeStr = timeMatch[1];
+      const parentLi = $el.closest('li');
+      if (parentLi.length) {
+        const timeEl = parentLi.find('.time, time, span.time');
+        if (timeEl.length) timeStr = timeEl.text().trim();
+      }
 
       news.push(formatNewsItem('ithome', news.length + 1, title, 0, url, timeStr));
     });
-
-    // 备选：抓取头部文章区域
-    if (news.length === 0) {
-      $('a[href*="ithome.com/"]').each((i, el) => {
-        if (news.length >= MAX_ITEMS_PER_SOURCE) return false;
-        const $el = $(el);
-        let href = $el.attr('href') || '';
-        let title = $el.attr('title') || $el.text().trim();
-        if (!href.match(/\/\d+\.htm/) || seenTitles.has(title) || title.length < 6) return;
-        seenTitles.add(title);
-        let url = href.startsWith('http') ? href : 'https://www.ithome.com' + href;
-        news.push(formatNewsItem('ithome', news.length + 1, title, 0, url));
-      });
-    }
 
     return news;
   } catch (error) {
