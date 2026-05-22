@@ -511,11 +511,11 @@ async function fetchTencent() {
   }
 }
 
-// ==================== 13. 搜狐新闻（使用Puppeteer） ====================
+// ==================== 13. 搜狐新闻（axios即可） ====================
 async function fetchSohu() {
   try {
-    const html = await fetchWithPuppeteer('https://www.sohu.com/');
-    const $ = cheerio.load(html);
+    const res = await axiosInstance.get('https://www.sohu.com/', { timeout: 12000 });
+    const $ = cheerio.load(res.data);
     const news = [];
     const seenTitles = new Set();
 
@@ -531,9 +531,8 @@ async function fetchSohu() {
       if (seenTitles.has(title) || title.length < 5) return;
       seenTitles.add(title);
 
-      let url = href.startsWith('http') ? href : 'https://www.sohu.com' + href;
-      const time = formatTimeDisplay(new Date());
-      news.push(formatNewsItem('sohu', news.length + 1, title, 0, url, time));
+      let url = href.startsWith('http') ? href : 'https://' + href;
+      news.push(formatNewsItem('sohu', news.length + 1, title, 0, url, ''));
     });
 
     return news;
