@@ -87,4 +87,3 @@ HotNewsHub/
 ## License
 
 MIT
-
