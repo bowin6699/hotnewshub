@@ -57,7 +57,7 @@ body {
   position: absolute;
   inset: 0;
   background:
-    url('https://images.unsplash.com/photo-1580584127374-51f35c4c3b6c?w=1600&q=85') center / cover no-repeat;
+    url('images/hero-bg.jpg') center / cover no-repeat;
   transform: scale(1.04);
   filter: brightness(.7) saturate(1.1);
   animation: heroZoom 20s ease-in-out infinite alternate;
