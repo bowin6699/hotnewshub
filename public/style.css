@@ -47,7 +47,7 @@ body {
    ============================================= */
 .hero {
   position: relative;
-  min-height: 480px;
+  min-height: 700px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -57,15 +57,14 @@ body {
   position: absolute;
   inset: 0;
   background:
-    url('images/hero-bg.jpg') center / cover no-repeat;
-  transform: scale(1.04);
+    url('images/hero-bg-wide.jpg') center / cover no-repeat;
   filter: brightness(.7) saturate(1.1);
   animation: heroZoom 20s ease-in-out infinite alternate;
 }
 
 @keyframes heroZoom {
-  from { transform: scale(1.04); }
-  to   { transform: scale(1.12); }
+  from { transform: scale(1); }
+  to   { transform: scale(1.04); }
 }
 
 .hero-overlay {
@@ -566,7 +565,7 @@ body {
    RESPONSIVE
    ============================================= */
 @media (max-width: 768px) {
-  .hero { min-height: 380px; }
+  .hero { min-height: 450px; }
   .hero-content { padding: 40px 20px 60px; }
 
   .toolbar-inner {
