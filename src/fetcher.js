@@ -36,7 +36,10 @@ async function processQueue() {
   puppeteerBusy = true;
   const { fn, resolve, reject } = puppeteerQueue.shift();
   try {
-    const result = await fn();
+    const result = await Promise.race([
+      fn(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Puppeteer超时(25s)')), 25000))
+    ]);
     resolve(result);
   } catch (e) {
     reject(e);
@@ -639,15 +642,13 @@ async function fetchAllNews() {
     { name: 'IT之家', fn: fetchIthome }
   ];
 
-  // 整体超时: 90秒
-  const results = await Promise.race([
-    Promise.allSettled(fetcherFunctions.map(f => f.fn())),
-    new Promise(resolve => setTimeout(() => resolve('timeout'), 90000))
-  ]);
-  if (results === 'timeout') {
-    console.error('新闻爬取整体超时(90s)');
-    return { news: [], lastUpdate: new Date().toISOString(), sources: { success: [], failed: [] } };
-  }
+  // 每个抓取器独立超时，互不影响
+  const results = await Promise.allSettled(
+    fetcherFunctions.map(f => Promise.race([
+      f.fn(),
+      new Promise(resolve => setTimeout(() => resolve([]), 60000))
+    ]))
+  );
 
   let allNews = [];
   const successCount = [];
