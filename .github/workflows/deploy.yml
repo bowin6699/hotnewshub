@@ -1,19 +1,15 @@
 name: Deploy to Alibaba Cloud
-
 on:
   push:
     branches: [main]
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-
       - name: Install sshpass
         run: sudo apt-get install -y sshpass
-
       - name: Create deployment archive
         run: |
           tar czf /tmp/deploy.tar.gz \
@@ -21,7 +17,6 @@ jobs:
             --exclude='node_modules' \
             --exclude='.github' \
             .
-
       - name: Upload archive to server
         timeout-minutes: 3
         run: |
@@ -29,7 +24,6 @@ jobs:
             scp -o StrictHostKeyChecking=no -o ConnectTimeout=30 \
             /tmp/deploy.tar.gz \
             ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/deploy.tar.gz
-
       - name: Deploy and restart service
         timeout-minutes: 3
         run: |
@@ -39,9 +33,10 @@ jobs:
             cd /root/HotNewsHub
             tar xzf /tmp/deploy.tar.gz
             npm install
+            export API_REFRESH_TOKEN="${{ secrets.API_REFRESH_TOKEN }}"
             ps aux | grep 'node server' | grep -v grep | awk '{print $2}' | xargs kill -9 2>/dev/null
             sleep 1
-            nohup node server.js > /root/hotnewshub.log 2>&1 &
+            nohup env API_REFRESH_TOKEN="${{ secrets.API_REFRESH_TOKEN }}" node server.js > /root/hotnewshub.log 2>&1 &
             sleep 2
             ps aux | grep 'node server' | grep -v grep
             echo "Deploy complete: $(date)"

@@ -1,9 +1,6 @@
-/**
- * server.js - HotNewsHub 新闻聚合站后端服务
- * Node.js + Express + node-cron
- */
-
 const express = require('express');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const cron = require('node-cron');
 const path = require('path');
 const { fetchAllNews } = require('./src/fetcher');
@@ -13,8 +10,24 @@ const { incrementVisits, getStats } = require('./src/counter');
 const app = express();
 const PORT = 3000;
 
+// 安全响应头
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  contentSecurityPolicy: false
+}));
+
 // 静态文件服务
 app.use(express.static(path.join(__dirname, 'public')));
+
+// API 速率限制：每个 IP 每分钟最多 30 次
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: '请求过于频繁，请稍后再试' }
+});
+app.use('/news/api', apiLimiter);
 
 // 记录每次访问
 app.use('/news/api/news', (req, res, next) => {
@@ -25,7 +38,6 @@ app.use('/news/api/news', (req, res, next) => {
 // API路由：获取新闻
 app.get('/news/api/news', async (req, res) => {
   try {
-    // 尝试从缓存获取
     const cached = cache.get('allNews');
     if (cached) {
       return res.json({
@@ -36,11 +48,8 @@ app.get('/news/api/news', async (req, res) => {
         cached: true
       });
     }
-
-    // 缓存不存在，重新拉取
     const result = await fetchAllNews();
     cache.set('allNews', result);
-
     res.json({
       success: true,
       data: result.news,
@@ -52,14 +61,17 @@ app.get('/news/api/news', async (req, res) => {
     console.error('API错误:', error);
     res.status(500).json({
       success: false,
-      message: '服务器错误',
-      error: error.message
+      message: '服务器内部错误'
     });
   }
 });
 
-// API路由：强制刷新数据
+// API路由：强制刷新数据（需要 Token 认证）
 app.get('/news/api/refresh', async (req, res) => {
+  const refreshToken = process.env.API_REFRESH_TOKEN || 'hotnewshub_refresh_2026';
+  if (req.query.token !== refreshToken) {
+    return res.status(403).json({ success: false, message: '无权限' });
+  }
   try {
     console.log('手动刷新数据...');
     const result = await fetchAllNews();
@@ -74,8 +86,7 @@ app.get('/news/api/refresh', async (req, res) => {
     console.error('刷新错误:', error);
     res.status(500).json({
       success: false,
-      message: '刷新失败',
-      error: error.message
+      message: '刷新失败'
     });
   }
 });
@@ -143,10 +154,11 @@ app.listen(PORT, async () => {
 ║  访问页面: /news/                                          ║
 ║  API接口:                                                  ║
 ║  - GET /news/api/news     获取新闻列表                     ║
-║  - GET /news/api/refresh  强制刷新数据                     ║
+║  - GET /news/api/refresh  强制刷新数据（需 ?token=xxx）    ║
 ║  - GET /news/api/status   查看缓存状态                     ║
 ║                                                           ║
 ║  定时任务: 每30分钟自动刷新数据                             ║
+║  安全功能: 速率限制(30次/分钟/IP) + 安全响应头             ║
 ╚═══════════════════════════════════════════════════════════╝
   `);
   await initialFetch();
