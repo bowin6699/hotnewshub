@@ -280,7 +280,20 @@ async function fetchGuancha() {
   }
 }
 
-// ==================== 3. 品玩（axios + Puppeteer 双保险） ====================
+const { execSync } = require('child_process');
+
+// 用curl绕过TLS指纹反爬（品玩等网站拦截Node.js TLS指纹）
+async function fetchWithCurl(url) {
+  try {
+    const result = execSync(
+      `curl -s -L --max-time 15 -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36' -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8' -H 'Accept-Language: zh-CN,zh;q=0.9' '${url}'`,
+      { timeout: 20000, encoding: 'utf-8', maxBuffer: 2 * 1024 * 1024 }
+    );
+    return result;
+  } catch (e) {
+    throw new Error(`curl 请求失败: ${e.message}`);
+  }
+}
 async function fetchPingwest() {
   let html = null;
   // 尝试方式1：axios 直接抓
@@ -288,7 +301,6 @@ async function fetchPingwest() {
     const res = await axiosInstance.get('https://www.pingwest.com/');
     const $try = cheerio.load(res.data);
     const count = $try('a.title').length;
-    // 检查是否被反爬或有足够内容
     if (count > 2 || res.data.length > 5000) {
       html = res.data;
     }
@@ -296,13 +308,24 @@ async function fetchPingwest() {
     console.log('品玩 axios 请求失败:', e.message);
   }
 
-  // 尝试方式2：Puppeteer 渲染（若 axios 没拿到有效数据）
+  // 尝试方式2：curl（绕过Node.js TLS指纹反爬）
+  if (!html) {
+    try {
+      console.log('品玩使用 curl 备用方案...');
+      html = await fetchWithCurl('https://www.pingwest.com/');
+      console.log('品玩 curl 成功:', html ? html.length + '字节' : '空数据');
+    } catch (e2) {
+      console.error('品玩 curl 也失败:', e2.message);
+    }
+  }
+
+  // 尝试方式3：Puppeteer 渲染（最后保底）
   if (!html) {
     try {
       console.log('品玩使用 Puppeteer 备用方案...');
       html = await fetchWithPuppeteer('https://www.pingwest.com/');
-    } catch (e2) {
-      console.error('品玩 Puppeteer 也失败:', e2.message);
+    } catch (e3) {
+      console.error('品玩所有方案均失败');
       return [];
     }
   }
