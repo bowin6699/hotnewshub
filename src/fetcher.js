@@ -618,10 +618,15 @@ async function fetchSohu() {
   }
 }
 
-// ==================== 澎湃新闻（axios即可） ====================
+// ==================== 澎湃新闻（带重试） ====================
 async function fetchThePaper() {
-  try {
-    const res = await axiosInstance.get('https://www.thepaper.cn/', { timeout: 12000 });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      if (attempt > 0) {
+        console.log(`澎湃新闻第${attempt + 1}次尝试...`);
+        await new Promise(r => setTimeout(r, 2000)); // 重试前等2秒
+      }
+      const res = await axiosInstance.get('https://www.thepaper.cn/', { timeout: 12000 });
     const $ = cheerio.load(res.data);
     const news = [];
     const seenTitles = new Set();
@@ -643,9 +648,14 @@ async function fetchThePaper() {
     });
 
     return news;
-  } catch (error) {
-    console.error('获取澎湃新闻失败:', error.message);
-    return [];
+    } catch (error) {
+      if (attempt === 0) {
+        console.error('澎湃新闻抓取失败（将重试）:', error.message);
+      } else {
+        console.error('获取澎湃新闻失败（已重试）:', error.message);
+        return [];
+      }
+    }
   }
 }
 
