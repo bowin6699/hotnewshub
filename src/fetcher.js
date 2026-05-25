@@ -280,14 +280,39 @@ async function fetchGuancha() {
   }
 }
 
-// ==================== 3. 品玩 ====================
+// ==================== 3. 品玩（axios + Puppeteer 双保险） ====================
 async function fetchPingwest() {
+  let html = null;
+  // 尝试方式1：axios 直接抓
   try {
     const res = await axiosInstance.get('https://www.pingwest.com/');
-    const $ = cheerio.load(res.data);
+    const $try = cheerio.load(res.data);
+    const count = $try('a.title').length;
+    // 检查是否被反爬或有足够内容
+    if (count > 2 || res.data.length > 5000) {
+      html = res.data;
+    }
+  } catch (e) {
+    console.log('品玩 axios 请求失败:', e.message);
+  }
+
+  // 尝试方式2：Puppeteer 渲染（若 axios 没拿到有效数据）
+  if (!html) {
+    try {
+      console.log('品玩使用 Puppeteer 备用方案...');
+      html = await fetchWithPuppeteer('https://www.pingwest.com/');
+    } catch (e2) {
+      console.error('品玩 Puppeteer 也失败:', e2.message);
+      return [];
+    }
+  }
+
+  try {
+    const $ = cheerio.load(html);
     const news = [];
     const seenTitles = new Set();
 
+    // 方案A：a.title（标准链接 + 标题）
     $('a.title').each((i, el) => {
       if (news.length >= MAX_ITEMS_PER_SOURCE) return false;
 
@@ -304,7 +329,6 @@ async function fetchPingwest() {
         url = 'https://www.pingwest.com' + url;
       }
 
-      // 获取时间 - 从父容器查找.time
       let timeStr = '';
       const $parent = $(el).closest('li, div, section');
       const timeEl = $parent.find('.time').first();
@@ -320,6 +344,34 @@ async function fetchPingwest() {
         news.push(formatNewsItem('pingwest', news.length + 1, title, 0, url, time));
       }
     });
+
+    // 方案B：如果方案A没拿到足够的数据，尝试其他选择器
+    if (news.length < 3) {
+      console.log('品玩方案A只拿到' + news.length + '条，尝试备用选择器...');
+      // 尝试查找文章卡片中的链接和标题
+      $('a[href*="/a/"], a[href*="/w/"]').each((i, el) => {
+        if (news.length >= MAX_ITEMS_PER_SOURCE) return false;
+
+        const title = $(el).text().trim();
+        let url = $(el).attr('href') || '';
+
+        if (!title || title.length < 5) return;
+        if (seenTitles.has(title)) return;
+        if (title.includes('热门话题') || title.includes('推荐作者')) return;
+        seenTitles.add(title);
+
+        if (url.startsWith('//')) url = 'https:' + url;
+        else if (url.startsWith('/')) url = 'https://www.pingwest.com' + url;
+
+        news.push(formatNewsItem('pingwest', news.length + 1, title, 0, url, ''));
+      });
+    }
+
+    if (news.length === 0) {
+      console.log('品玩: 所有方案均未获取到数据，原始HTML长度=' + html.length);
+    } else {
+      console.log('品玩: 成功获取 ' + news.length + ' 条');
+    }
 
     return news;
   } catch (error) {
