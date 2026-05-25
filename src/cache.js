@@ -12,10 +12,7 @@
 
 class NewsCache {
   constructor() {
-    // 使用Map存储缓存，键为数据源名称
     this.cache = new Map();
-    // 缓存过期时间（毫秒），默认30分钟
-    this.expireTime = 30 * 60 * 1000;
   }
 
   /**
@@ -34,37 +31,32 @@ class NewsCache {
   /**
    * 获取缓存数据
    * @param {string} key - 缓存键名
-   * @returns {object|null} - 返回缓存数据或null（如果不存在或已过期）
+   * @returns {object|null} - 返回缓存数据或null（如果不存在）
    */
   get(key) {
     const cacheItem = this.cache.get(key);
     if (!cacheItem) return null;
-
-    // 检查是否过期
-    if (Date.now() - cacheItem.timestamp > this.expireTime) {
-      this.cache.delete(key);
-      return null;
-    }
-
     return cacheItem.data;
   }
 
   /**
-   * 检查缓存是否存在且有效
+   * 获取缓存数据及其时间戳
+   * @param {string} key - 缓存键名
+   * @returns {{ data: object|null, age: number }} - 数据和年龄(毫秒)
+   */
+  getWithAge(key) {
+    const cacheItem = this.cache.get(key);
+    if (!cacheItem) return { data: null, age: Infinity };
+    return { data: cacheItem.data, age: Date.now() - cacheItem.timestamp };
+  }
+
+  /**
+   * 检查缓存是否存在
    * @param {string} key - 缓存键名
    * @returns {boolean}
    */
   has(key) {
-    const cacheItem = this.cache.get(key);
-    if (!cacheItem) return false;
-
-    // 检查是否过期
-    if (Date.now() - cacheItem.timestamp > this.expireTime) {
-      this.cache.delete(key);
-      return false;
-    }
-
-    return true;
+    return this.cache.has(key);
   }
 
   /**

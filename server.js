@@ -9,6 +9,7 @@ const { incrementVisits, getStats } = require('./src/counter');
 
 const app = express();
 const PORT = 3000;
+const STALE_MS = 30 * 60 * 1000; // 30分钟判断数据是否陈旧
 
 // 安全响应头
 app.use(helmet({
@@ -35,11 +36,15 @@ app.use('/news/api/news', (req, res, next) => {
   next();
 });
 
-// API路由：获取新闻
+// API路由：获取新闻（stale-while-revalidate模式）
 app.get('/news/api/news', async (req, res) => {
   try {
-    const cached = cache.get('allNews');
+const { data: cached, age } = cache.getWithAge('allNews');
     if (cached) {
+      // 如果数据超过30分钟，后台异步刷新（不阻塞响应）
+      if (age > STALE_MS) {
+        refreshCacheInBackground();
+      }
       return res.json({
         success: true,
         data: cached.news,
@@ -48,6 +53,8 @@ app.get('/news/api/news', async (req, res) => {
         cached: true
       });
     }
+
+    // 缓存不存在（首次启动），同步拉取
     const result = await fetchAllNews();
     cache.set('allNews', result);
     res.json({
@@ -120,6 +127,23 @@ async function initialFetch() {
     console.log('初始数据加载完成');
   } catch (error) {
     console.error('初始数据加载失败:', error);
+  }
+}
+
+// 后台异步刷新缓存（用户无感知）
+let bgRefreshing = false;
+async function refreshCacheInBackground() {
+  if (bgRefreshing) return;
+  bgRefreshing = true;
+  console.log('后台刷新：检测到缓存数据陈旧，开始异步刷新...');
+  try {
+    const result = await fetchAllNews();
+    cache.set('allNews', result);
+    console.log('后台刷新完成');
+  } catch (error) {
+    console.error('后台刷新失败（下次自动重试）:', error.message);
+  } finally {
+    bgRefreshing = false;
   }
 }
 
