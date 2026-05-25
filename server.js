@@ -75,7 +75,10 @@ const { data: cached, age } = cache.getWithAge('allNews');
 
 // API路由：强制刷新数据（需要 Token 认证）
 app.get('/news/api/refresh', async (req, res) => {
-  const refreshToken = process.env.API_REFRESH_TOKEN || 'hotnewshub_refresh_2026';
+  const refreshToken = process.env.API_REFRESH_TOKEN;
+  if (!refreshToken) {
+    return res.status(500).json({ success: false, message: '服务端未配置刷新令牌' });
+  }
   if (req.query.token !== refreshToken) {
     return res.status(403).json({ success: false, message: '无权限' });
   }
